@@ -1,0 +1,2 @@
+While in th CbotGraphics directory:
+	g++ -o Cbot src/*.cpp -lmingw32 -lSDL2main -lSDL2 -lSDL2_image -static-libgcc -static-libstdc++ -Ofast
