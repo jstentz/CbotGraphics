@@ -132,7 +132,6 @@ int md(square sq1, square sq2) {
     return abs(r2 - r1) + abs(f2 - f1);
 }
 
-
 int mop_up_eval(turn winning_side) {
     // this function assumes that there are no pawns for either side
     // always returns from white's perspective
@@ -156,11 +155,42 @@ int mop_up_eval(turn winning_side) {
     return eval * perspective;
 }
 
+/* This is definitely the naive approach... should probably combine this with open file calc */
+int num_doubled(bitboard pawns) {
+    int doubled = 0;
+    int num_pawns_on_file;
+    for (int f = 0; f < 8; f++) {
+        num_pawns_on_file = pop_count(pawns & luts.mask_file[f]);
+        if(num_pawns_on_file > 1) doubled += num_pawns_on_file;
+    }   
+    return doubled;
+}
+
 /* value returned will be from white's perspective 
    this means that a negative score is good for black */
-/* shoud check here for attacking pawns! */
-int evaluate_pawns() {
-    return 0;
+/* should check here for attacking pawns! */
+int evaluate_pawns(bitboard white_king_squares, bitboard black_king_squares) {
+    int attacking_score = 0;
+
+    bitboard white_pawns = b.piece_boards[WHITE_PAWNS_INDEX];
+    bitboard black_pawns = b.piece_boards[BLACK_PAWNS_INDEX]; 
+    bitboard attacks;
+
+    /* black's count is positive since more doubled pawns for black is good for white */
+    int doubled_score = (num_doubled(black_pawns) - num_doubled(white_pawns)) * DOUBLE_PAWNS_WEIGHT;
+
+    while(white_pawns) {
+        attacks = get_pawn_attacks((square)first_set_bit(white_pawns), W);
+        attacking_score += pop_count(attacks & black_king_squares) * ATTACKING_WEIGHT;
+        REMOVE_FIRST(white_pawns);
+    }
+
+    while(black_pawns) {
+        attacks = get_pawn_attacks((square)first_set_bit(black_pawns), B);
+        attacking_score -= pop_count(attacks & white_king_squares) * ATTACKING_WEIGHT;
+        REMOVE_FIRST(black_pawns);
+    }
+    return attacking_score + doubled_score;
 }
 
 int evaluate_knights(bitboard white_king_squares, bitboard black_king_squares) {
@@ -295,6 +325,7 @@ int evaluate(int alpha, int beta) {
     /* in order to do lazy eval, we will see if this exceeds the alpha-beta bounds */
     lazy_eval = (((middlegame_eval * (256 - game_phase)) + (endgame_eval * game_phase)) / 256);
     lazy_eval *= perspective;
+
     if(lazy_eval >= beta) {
         store_eval_entry(b.piece_hash, beta, BETA);
         return beta;
@@ -310,10 +341,6 @@ int evaluate(int alpha, int beta) {
         if(b.material_score > 0) endgame_eval += mop_up_eval(W);
         else endgame_eval += mop_up_eval(B);
     }
-    
-    // /* add a tempo bonus to middle game */
-    // if(b.t == W) middlegame_eval += 10;
-    // else         middlegame_eval -= 10;
 
     int queen_moves_from_white_king = pop_count(get_queen_attacks(b.white_king_loc, b.all_pieces) & ~b.white_pieces);
     int queen_moves_from_black_king = pop_count(get_queen_attacks(b.black_king_loc, b.all_pieces) & ~b.black_pieces);
@@ -330,20 +357,11 @@ int evaluate(int alpha, int beta) {
     int bishop_score = evaluate_bishops(white_king_squares, black_king_squares);
     int rook_score = evaluate_rooks(white_king_squares, black_king_squares);
     int queen_score = evaluate_queens(white_king_squares, black_king_squares);
+    int pawn_score = evaluate_pawns(white_king_squares, black_king_squares);
 
     /* we care more about the placement of our minor pieces in the middle game */
-    middlegame_eval += (knight_score + bishop_score) * 2 + (rook_score + queen_score);
-    endgame_eval += (knight_score + bishop_score + rook_score + queen_score);
-
-    /* check for pawn shield */
-    // bitboard white_king_area = get_king_attacks(white_king_loc);
-    // bitboard black_king_area = get_king_attacks(black_king_loc);
-
-    // int white_pawn_shield_penalty =  60 - 20 * pop_count(white_king_area & b.piece_boards[WHITE_PAWNS_INDEX]);
-    // int black_pawn_shield_penalty = -60 + 20 * pop_count(black_king_area & b.piece_boards[BLACK_PAWNS_INDEX]);
-
-    // middlegame_eval -= white_pawn_shield_penalty;
-    // middlegame_eval -= black_pawn_shield_penalty;
+    middlegame_eval += (knight_score + bishop_score) * 2 + (rook_score + queen_score) + pawn_score;
+    endgame_eval += (knight_score + bishop_score + rook_score + queen_score) + 2 * pawn_score;
 
     eval = (((middlegame_eval * (256 - game_phase)) + (endgame_eval * game_phase)) / 256);
 
@@ -367,3 +385,16 @@ int moves_until_mate(int mate_score) {
     mate_score = abs(mate_score);
     return (INT_MAX - mate_score - 1) / 2;
 }
+
+/*
+Things to add to the evaluation:
+    1. Pawn structure evaluation
+    2. Add a bonus for defending your own king, not just attacking the opponents
+    3. move the calculation for middle game vs end game weights into the specific functions
+       so I can more easily distinguish traits per piece
+    4. find the open and semi-open files (create a bitboard for each type)
+    5. add penalties to kings that are on semi-open of other side or open files
+    6. add bonuses for rooks that are on these open files
+    7. create a function to get mass pawn attacks... that should make getting pawn attacks much faster
+       can also use this information to see how many of my pawns are defending each other
+*/

@@ -18,6 +18,7 @@
 #define LAZY_EVAL_MARGIN 200 /* we won't consider positions that are two pawns different than alpha / beta */
 #define ATTACKING_WEIGHT 15
 #define MOBILITY_WEIGHT 1
+#define DOUBLE_PAWNS_WEIGHT 10
 
 #define EXACT 0
 #define ALPHA 1
